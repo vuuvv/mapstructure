@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -18,10 +19,11 @@ func typedDecodeHook(h DecodeHookFunc) DecodeHookFunc {
 	var f1 DecodeHookFuncType
 	var f2 DecodeHookFuncKind
 	var f3 DecodeHookFuncValue
+	var f4 DecodeHookFuncValueWithName
 
 	// Fill in the variables into this interface and the rest is done
 	// automatically using the reflect package.
-	potential := []interface{}{f1, f2, f3}
+	potential := []interface{}{f1, f2, f3, f4}
 
 	v := reflect.ValueOf(h)
 	vt := v.Type()
@@ -40,6 +42,7 @@ func typedDecodeHook(h DecodeHookFunc) DecodeHookFunc {
 // that took reflect.Kind instead of reflect.Type.
 func DecodeHookExec(
 	raw DecodeHookFunc,
+	name string,
 	from reflect.Value, to reflect.Value) (interface{}, error) {
 
 	switch f := typedDecodeHook(raw).(type) {
@@ -49,6 +52,8 @@ func DecodeHookExec(
 		return f(from.Kind(), to.Kind(), from.Interface())
 	case DecodeHookFuncValue:
 		return f(from, to)
+	case DecodeHookFuncValueWithName:
+		return f(name, from, to)
 	default:
 		return nil, errors.New("invalid decode hook signature")
 	}
@@ -60,13 +65,13 @@ func DecodeHookExec(
 // The composed funcs are called in order, with the result of the
 // previous transformation.
 func ComposeDecodeHookFunc(fs ...DecodeHookFunc) DecodeHookFunc {
-	return func(f reflect.Value, t reflect.Value) (interface{}, error) {
+	return func(name string, f reflect.Value, t reflect.Value) (interface{}, error) {
 		var err error
 		data := f.Interface()
 
 		newFrom := f
 		for _, f1 := range fs {
-			data, err = DecodeHookExec(f1, newFrom, t)
+			data, err = DecodeHookExec(f1, name, newFrom, t)
 			if err != nil {
 				return nil, err
 			}
@@ -231,6 +236,75 @@ func RecursiveStructToMapHookFunc() DecodeHookFunc {
 
 		return f.Interface(), nil
 	}
+}
+
+func SystemEnvironmentHookFunc(prefix ...string) DecodeHookFunc {
+	p := ""
+	if len(prefix) != 0 {
+		p = strings.Join(prefix, "")
+	}
+	return func(name string, f reflect.Value, t reflect.Value) (interface{}, error) {
+		if t.Kind() == reflect.Struct ||
+			t.Kind() == reflect.Map ||
+			t.Kind() == reflect.Slice ||
+			t.Kind() == reflect.Array {
+			return f.Interface(), nil
+		}
+
+		env, ok := getEnv(p + name)
+		if ok {
+			return env, nil
+		}
+		return f.Interface(), nil
+	}
+}
+
+func getEnv(name string) (val string, ok bool) {
+	val, ok = os.LookupEnv(name)
+	if ok {
+		return
+	}
+
+	upperName := strings.ToUpper(name)
+	val, ok = os.LookupEnv(name)
+	if ok {
+		return
+	}
+
+	val, ok = getEnvRelax(upperName)
+	if ok {
+		return
+	}
+
+	val, ok = getEnvRelax(name)
+	if ok {
+		return
+	}
+	return "", false
+}
+
+func getEnvRelax(name string) (val string, ok bool) {
+	noDotName := strings.ReplaceAll(name, ".", "_")
+	if name != noDotName {
+		if val, ok = os.LookupEnv(noDotName); ok {
+			return
+		}
+	}
+
+	noHyphenName := strings.ReplaceAll(name, "-", "_")
+	if name != noHyphenName {
+		if val, ok = os.LookupEnv(noHyphenName); ok {
+			return
+		}
+	}
+
+	noDotNoHyphenName := strings.ReplaceAll(noHyphenName, ".", "_")
+	if name != noHyphenName {
+		if val, ok = os.LookupEnv(noDotNoHyphenName); ok {
+			return
+		}
+	}
+	return "", false
 }
 
 // TextUnmarshallerHookFunc returns a DecodeHookFunc that applies

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"math/big"
 	"net"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -27,7 +28,7 @@ func TestComposeDecodeHookFunc(t *testing.T) {
 	f := ComposeDecodeHookFunc(f1, f2)
 
 	result, err := DecodeHookExec(
-		f, reflect.ValueOf(""), reflect.ValueOf([]byte("")))
+		f, "", reflect.ValueOf(""), reflect.ValueOf([]byte("")))
 	if err != nil {
 		t.Fatalf("bad: %s", err)
 	}
@@ -48,7 +49,7 @@ func TestComposeDecodeHookFunc_err(t *testing.T) {
 	f := ComposeDecodeHookFunc(f1, f2)
 
 	_, err := DecodeHookExec(
-		f, reflect.ValueOf(""), reflect.ValueOf([]byte("")))
+		f, "", reflect.ValueOf(""), reflect.ValueOf([]byte("")))
 	if err.Error() != "foo" {
 		t.Fatalf("bad: %s", err)
 	}
@@ -75,7 +76,7 @@ func TestComposeDecodeHookFunc_kinds(t *testing.T) {
 	f := ComposeDecodeHookFunc(f1, f2)
 
 	_, err := DecodeHookExec(
-		f, reflect.ValueOf(""), reflect.ValueOf([]byte("")))
+		f, "", reflect.ValueOf(""), reflect.ValueOf([]byte("")))
 	if err != nil {
 		t.Fatalf("bad: %s", err)
 	}
@@ -143,7 +144,7 @@ func TestStringToSliceHookFunc(t *testing.T) {
 	}
 
 	for i, tc := range cases {
-		actual, err := DecodeHookExec(f, tc.f, tc.t)
+		actual, err := DecodeHookExec(f, "", tc.f, tc.t)
 		if tc.err != (err != nil) {
 			t.Fatalf("case %d: expected err %#v", i, tc.err)
 		}
@@ -171,7 +172,7 @@ func TestStringToTimeDurationHookFunc(t *testing.T) {
 	}
 
 	for i, tc := range cases {
-		actual, err := DecodeHookExec(f, tc.f, tc.t)
+		actual, err := DecodeHookExec(f, "", tc.f, tc.t)
 		if tc.err != (err != nil) {
 			t.Fatalf("case %d: expected err %#v", i, tc.err)
 		}
@@ -200,7 +201,7 @@ func TestStringToTimeHookFunc(t *testing.T) {
 
 	for i, tc := range cases {
 		f := StringToTimeHookFunc(tc.layout)
-		actual, err := DecodeHookExec(f, tc.f, tc.t)
+		actual, err := DecodeHookExec(f, "", tc.f, tc.t)
 		if tc.err != (err != nil) {
 			t.Fatalf("case %d: expected err %#v", i, tc.err)
 		}
@@ -228,7 +229,7 @@ func TestStringToIPHookFunc(t *testing.T) {
 
 	for i, tc := range cases {
 		f := StringToIPHookFunc()
-		actual, err := DecodeHookExec(f, tc.f, tc.t)
+		actual, err := DecodeHookExec(f, "", tc.f, tc.t)
 		if tc.err != (err != nil) {
 			t.Fatalf("case %d: expected err %#v", i, tc.err)
 		}
@@ -261,7 +262,7 @@ func TestStringToIPNetHookFunc(t *testing.T) {
 
 	for i, tc := range cases {
 		f := StringToIPNetHookFunc()
-		actual, err := DecodeHookExec(f, tc.f, tc.t)
+		actual, err := DecodeHookExec(f, "", tc.f, tc.t)
 		if tc.err != (err != nil) {
 			t.Fatalf("case %d: expected err %#v", i, tc.err)
 		}
@@ -327,7 +328,7 @@ func TestWeaklyTypedHook(t *testing.T) {
 	}
 
 	for i, tc := range cases {
-		actual, err := DecodeHookExec(f, tc.f, tc.t)
+		actual, err := DecodeHookExec(f, "", tc.f, tc.t)
 		if tc.err != (err != nil) {
 			t.Fatalf("case %d: expected err %#v", i, tc.err)
 		}
@@ -340,7 +341,7 @@ func TestWeaklyTypedHook(t *testing.T) {
 }
 
 func TestStructToMapHookFuncTabled(t *testing.T) {
-	var f DecodeHookFunc = RecursiveStructToMapHookFunc()
+	var f = RecursiveStructToMapHookFunc()
 
 	type b struct {
 		TestKey string
@@ -466,7 +467,7 @@ func TestTextUnmarshallerHookFunc(t *testing.T) {
 
 	for i, tc := range cases {
 		f := TextUnmarshallerHookFunc()
-		actual, err := DecodeHookExec(f, tc.f, tc.t)
+		actual, err := DecodeHookExec(f, "", tc.f, tc.t)
 		if tc.err != (err != nil) {
 			t.Fatalf("case %d: expected err %#v", i, tc.err)
 		}
@@ -475,5 +476,55 @@ func TestTextUnmarshallerHookFunc(t *testing.T) {
 				"case %d: expected %#v, got %#v",
 				i, tc.result, actual)
 		}
+	}
+}
+
+func TestSystemEnvironmentHook(t *testing.T) {
+	f1 := SystemEnvironmentHookFunc()
+
+	_ = os.Setenv("VFOO", "foo1")
+	_ = os.Setenv("VBAR", "1234")
+	_ = os.Setenv("VBAR_VSTRING", "foo_string")
+	_ = os.Setenv("VBAR_VUINT", "10")
+
+	input := map[string]interface{}{
+		"vfoo": "foo",
+		"vbar": map[string]interface{}{
+			"vstring": "foo",
+			"Vuint":   42,
+			"vsilent": "false",
+			"foo":     "bar",
+		},
+		"bar": "nil",
+	}
+
+	result := &Nested{}
+
+	cfg := &DecoderConfig{
+		DecodeHook:       f1,
+		Result:           result,
+		WeaklyTypedInput: true,
+	}
+
+	d, err := NewDecoder(cfg)
+	if err != nil {
+		t.Fatalf("err: %s", err.Error())
+	}
+
+	err = d.Decode(input)
+	if err != nil {
+		t.Fatalf("err: %s", err.Error())
+	}
+
+	if result.Vfoo != "foo1" {
+		t.Fatalf("expected %#v, got %#v", "foo1", result.Vfoo)
+	}
+
+	if result.Vbar.Vstring != "foo_string" {
+		t.Fatalf("expected %#v, got %#v", "foo_string", result.Vbar.Vstring)
+	}
+
+	if result.Vbar.Vuint != 10 {
+		t.Fatalf("expected %#v, got %#v", 10, result.Vbar.Vuint)
 	}
 }

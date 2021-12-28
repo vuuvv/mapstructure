@@ -196,6 +196,10 @@ type DecodeHookFuncKind func(reflect.Kind, reflect.Kind, interface{}) (interface
 // values.
 type DecodeHookFuncValue func(from reflect.Value, to reflect.Value) (interface{}, error)
 
+// DecodeHookFuncValueWithName is a DecodeHookFunc which has complete access to both the source and target
+// values with name.
+type DecodeHookFuncValueWithName func(name string, from reflect.Value, to reflect.Value) (interface{}, error)
+
 // DecoderConfig is the configuration that is used to create a new decoder
 // and allows customization of various aspects of decoding.
 type DecoderConfig struct {
@@ -437,7 +441,7 @@ func (d *Decoder) decode(name string, input interface{}, outVal reflect.Value) e
 	if d.config.DecodeHook != nil {
 		// We have a DecodeHook, so let's pre-process the input.
 		var err error
-		input, err = DecodeHookExec(d.config.DecodeHook, inputVal, outVal)
+		input, err = DecodeHookExec(d.config.DecodeHook, name, inputVal, outVal)
 		if err != nil {
 			return fmt.Errorf("error decoding '%s': %s", name, err)
 		}

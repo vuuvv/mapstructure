@@ -14,7 +14,7 @@ structure.
 Standard `go get`:
 
 ```
-$ go get github.com/mitchellh/mapstructure
+$ go get github.com/vuuvv/mapstructure
 ```
 
 ## Usage & Example
