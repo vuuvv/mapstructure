@@ -253,7 +253,7 @@ func SystemEnvironmentHookFunc(prefix ...string) DecodeHookFunc {
 		}
 
 		envName := name
-		if len(name) == 0 {
+		if len(name) != 0 {
 			envName = p + "." + name
 		}
 		env, ok := getEnv(envName)
