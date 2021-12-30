@@ -244,6 +244,7 @@ func SystemEnvironmentHookFunc(prefix ...string) DecodeHookFunc {
 		p = strings.Join(prefix, "")
 	}
 	return func(name string, f reflect.Value, t reflect.Value) (interface{}, error) {
+		// 环境变量不能设置结构体、map、slice、array
 		if t.Kind() == reflect.Struct ||
 			t.Kind() == reflect.Map ||
 			t.Kind() == reflect.Slice ||
@@ -251,7 +252,11 @@ func SystemEnvironmentHookFunc(prefix ...string) DecodeHookFunc {
 			return f.Interface(), nil
 		}
 
-		env, ok := getEnv(p + name)
+		envName := name
+		if len(name) == 0 {
+			envName = p + "." + name
+		}
+		env, ok := getEnv(envName)
 		if ok {
 			return env, nil
 		}
